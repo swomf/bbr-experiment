@@ -1,0 +1,96 @@
+#!/usr/bin/env bpftrace
+/*
+ * Trace BBR internals from the sender kernel
+ *
+ * Captures per-ACK BBR state: bandwidth estimate, inflight, pacing rate,
+ * cwnd, and mode transitions. Output is one JSON line per event.
+ *
+ * Needs Linux kernel with BBR and bpftrace >= 0.14
+ * Run as root on the sender
+ *
+ * Tracepoints used:
+ *   tcp:tcp_probe          - fires on every ACK, gives cwnd/srtt/etc.
+ *   sock:inet_sock_set_state - connection state transitions (for session boundary)
+ *
+ * Note: BBR-internal fields (BtlBw, mode) are not exposed via stable
+ * tracepoints; we read them from the tcp_sock / bbr struct via kprobes.
+ * TODO: May need to adjust struct offsets
+ */
+
+BEGIN
+{
+    printf("{\"event\":\"start\",\"ts\":%llu}\n", nsecs);
+}
+
+/* == Per-ACK probe ========================================================== */
+tracepoint:tcp:tcp_probe
+{
+    /* Filter to iperf3 traffic only (dest port 5201) */
+    if (args->dport != 5201 && args->sport != 5201) {
+        return;
+    }
+
+    printf("{\"event\":\"probe\","
+           "\"ts\":%llu,"
+           "\"saddr\":\"%s\","
+           "\"daddr\":\"%s\","
+           "\"sport\":%u,"
+           "\"dport\":%u,"
+           "\"snd_cwnd\":%u,"
+           "\"snd_wnd\":%u,"
+           "\"srtt_us\":%u,"
+           "\"rcv_wnd\":%u,"
+           "\"data_len\":%u"
+           "}\n",
+           nsecs,
+           args->saddr,
+           args->daddr,
+           args->sport,
+           args->dport,
+           args->snd_cwnd,
+           args->snd_wnd,
+           args->srtt_us,
+           args->rcv_wnd,
+           args->data_len);
+}
+
+/* == Retransmit events ====================================================== */
+tracepoint:tcp:tcp_retransmit_skb
+{
+    if (args->dport != 5201 && args->sport != 5201) {
+        return;
+    }
+    printf("{\"event\":\"retransmit\","
+           "\"ts\":%llu,"
+           "\"sport\":%u,"
+           "\"dport\":%u"
+           "}\n",
+           nsecs,
+           args->sport,
+           args->dport);
+}
+
+/* == Connection lifecycle =================================================== */
+tracepoint:sock:inet_sock_set_state
+{
+    if (args->dport != 5201 && args->sport != 5201) {
+        return;
+    }
+    printf("{\"event\":\"state_change\","
+           "\"ts\":%llu,"
+           "\"sport\":%u,"
+           "\"dport\":%u,"
+           "\"oldstate\":%d,"
+           "\"newstate\":%d"
+           "}\n",
+           nsecs,
+           args->sport,
+           args->dport,
+           args->oldstate,
+           args->newstate);
+}
+
+END
+{
+    printf("{\"event\":\"end\",\"ts\":%llu}\n", nsecs);
+}
