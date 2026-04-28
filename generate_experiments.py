@@ -4,11 +4,11 @@
 import csv
 import itertools
 
-RTT_MS = [10, 100]
-BW_MBIT = [25, 50, 100, 300, 500, 1000]
-BUF_BYTES = [100_000, 2_000_000, 10_000_000, 50_000_000, 100_000_000]
+RTT_MS = [100]
+BW_MBIT = [500]
+BUF_BYTES = [6250000 // 10, 6250000, 6250000 * 10]
 LOSS_PCT = [0, 1, 2]
-CC = ["bbr"]
+CC = ["cubic"]
 
 rows = list(itertools.product(RTT_MS, BW_MBIT, BUF_BYTES, LOSS_PCT, CC))
 
