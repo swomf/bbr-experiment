@@ -211,9 +211,8 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
     print("  [2/4] Starting bpftrace on sender...")
     # Write output to a local file on the sender — avoids piping large logs over
     # SSH during the experiment (especially at high bandwidth).
-    bpf_proc = ssh_bg(
-        f"sudo bpftrace {BPFTRACE_SCRIPT_REMOTE} > /tmp/bpftrace_out.log 2>&1"
-    )
+    # (expects 'sudo setcap cap_bpf,cap_perfmon+eip /usr/bin/bpftrace' on sender)
+    bpf_proc = ssh_bg(f"bpftrace {BPFTRACE_SCRIPT_REMOTE} > /tmp/bpftrace_out.log 2>&1")
     time.sleep(1)  # let bpftrace attach
 
     # == 3. start tc poll locally ==============================================
