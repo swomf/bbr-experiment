@@ -50,7 +50,7 @@ IPERF_DURATION = 60  # seconds/experiment
 # (if running 2 iperfs for different CCAs)
 PARALLEL_IPERF: tuple[str, str] | None = ("bbr", "cubic")
 PARALLEL_IPERF = ("bbr", "cubic")
-PARALLEL_IPERF = None
+# PARALLEL_IPERF = None
 # downstream receiver will need to run iperf3 on port 5201, 5202
 
 COOLDOWN = 15  # seconds between experiments (drain queues)
