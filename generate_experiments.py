@@ -8,7 +8,7 @@ RTT_MS = [100]
 BW_MBIT = [500]
 BUF_BYTES = [6250000 // 10, 6250000, 6250000 * 10]
 LOSS_PCT = [0, 1, 2]
-CC = ["cubic"]
+CC = ["bbr"]
 
 rows = list(itertools.product(RTT_MS, BW_MBIT, BUF_BYTES, LOSS_PCT, CC))
 
