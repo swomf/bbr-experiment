@@ -1,0 +1,13 @@
+{
+  "rtt_ms": 100,
+  "bw_mbit": 25,
+  "buf_bytes": 50000000,
+  "loss_pct": 2,
+  "cc": "bbr",
+  "iperf_duration": 60,
+  "start_utc": "2026-04-28T10:11:37.141830+00:00",
+  "sender": "172.16.1.2",
+  "sender_kernel": "6.13.7-bbrv3+",
+  "sender_cc_default": "bbr",
+  "end_utc": "2026-04-28T10:12:43.371278+00:00"
+}

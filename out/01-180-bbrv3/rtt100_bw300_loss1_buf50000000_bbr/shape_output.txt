@@ -1,0 +1,34 @@
+========== Traffic shaping configuration ==========
+  Total RTT:    100 ms (50.00 ms each direction)
+  Bandwidth:    300 Mbps (both directions)
+  Loss:         1% (forward path only)
+  Buffer:       50000000 bytes (~33334 packets at 1500B MTU)
+  Burst:        37500 bytes (≈1ms at rate)
+  Forward iface: enp44s0 (egress to receiver)
+  Reverse iface: enp0s20f0u4u4 (egress to sender)
+===================================================
+
+===== Forward path: enp44s0 =====
+qdisc htb 1: root refcnt 2 r2q 10 default 0x10 direct_packets_stat 0 direct_qlen 1000
+ Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) 
+ backlog 0b 0p requeues 0
+qdisc netem 10: parent 1:10 limit 33334 delay 50ms loss 1% seed 17460620785995381110
+ Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) 
+ backlog 0b 0p requeues 0
+
+===== Reverse path: enp0s20f0u4u4 =====
+qdisc htb 1: root refcnt 2 r2q 10 default 0x10 direct_packets_stat 0 direct_qlen 1000
+ Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) 
+ backlog 0b 0p requeues 0
+qdisc netem 10: parent 1:10 limit 33334 delay 50ms seed 16049898868866350581
+ Sent 0 bytes 0 pkt (dropped 0, overlimits 0 requeues 0) 
+ backlog 0b 0p requeues 0
+
+Shaping applied successfully.
+
+Verify expected RTT from sender:
+    ping -c 5 172.16.2.2     # should show RTT ≈ 100 ms
+
+To clear shaping later:
+    sudo tc qdisc del dev enp44s0 root
+    sudo tc qdisc del dev enp0s20f0u4u4 root
