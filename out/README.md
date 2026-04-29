@@ -1,5 +1,18 @@
 # output data
 
+## analysis
+
+This python project is managed by `uv` ([docs.astral.sh](https://docs.astral.sh/uv/)).
+Analyzer scripts are in `analyzers/`. For example
+
+```bash
+uv run ./analyzers/compare_iperf.py --label1 bbr --label2 cubic \
+  out/02-009-bbrv2-cubic/rtt100_bw500_loss0_buf62500000_bbr/iperf_sender_a.json \
+  out/02-009-bbrv2-cubic/rtt100_bw500_loss0_buf62500000_bbr/iperf_sender_b.json
+```
+
+## data organization
+
 Top-level data dirs are of the form
 
 ```
