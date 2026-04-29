@@ -49,7 +49,7 @@ IPERF_DURATION = 60  # seconds/experiment
 # iperf_sender.json if one
 # (if running 2 iperfs for different CCAs)
 PARALLEL_IPERF: tuple[str, str] | None = ("bbr", "cubic")
-PARALLEL_IPERF = ("bbr", "cubic")
+PARALLEL_IPERF = ("cubic", "cubic")
 # PARALLEL_IPERF = None
 # downstream receiver will need to run iperf3 on port 5201, 5202
 
