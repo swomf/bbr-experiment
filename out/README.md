@@ -19,9 +19,28 @@ Top-level data dirs are of the form
 {experimentnumber}-{matrixsize}-{algo(s)}
 ```
 
+The `03/` experiments vary the Cartesian product:
+
+```python
+RTT_MS = [10, 50, 100]
+BW_MBIT = [100]
+BUF_BDP_RATIOS = [0.1, 1.0, 10.0]
+LOSS_PCT = [0, 2]
+COMPARISONS = [
+    ("cubic", ""),
+    ("bbrv2", ""),  # ran on bbrv2 kernel
+    ("bbrv3", ""),
+    ("cubic", "cubic"),
+    ("cubic", "bbrv2"),  # ran on bbrv2 kernel
+    ("cubic", "bbrv3"),
+]
+```
+
+## older experimental design
+
 The `01/` experiments vary the Cartesian product:
 
-```
+```python
 RTT_MS = [10, 100]
 BW_MBIT = [25, 50, 100, 300, 500, 1000]
 BUF_BYTES = [100_000, 2_000_000, 10_000_000, 50_000_000, 100_000_000]
@@ -30,7 +49,7 @@ LOSS_PCT = [0, 1, 2]
 
 The `02/` experiments vary the Cartesian product:
 
-```
+```python
 RTT_MS = [100]
 BW_MBIT = [500]
 BUF_BYTES = [6250000 // 10, 6250000, 6250000 * 10]
