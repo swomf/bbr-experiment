@@ -16,3 +16,6 @@ sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
 
 # fair queue qdisc. qdisc typically does not expect pacing, but bbr needs it.
 sudo sysctl -w net.core.default_qdisc=fq
+
+# avoid cpu throttling
+echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor

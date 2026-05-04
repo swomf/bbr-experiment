@@ -19,3 +19,6 @@ sudo ip link set "$sender" up
 sudo ip link set "$receiver" up
 
 sudo sysctl -w net.ipv4.ip_forward=1
+
+# avoid cpu throttling
+echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
