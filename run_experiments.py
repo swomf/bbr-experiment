@@ -44,14 +44,7 @@ _ifaces = dict(
 IFACE_FWD = _ifaces["IFACE_FWD"]
 IFACE_REV = _ifaces["IFACE_REV"]
 
-IPERF_DURATION = 60  # seconds/experiment
-# iperf_sender_a.json / iperf_sender_b.json if two
-# iperf_sender.json if one
-# (if running 2 iperfs for different CCAs)
-PARALLEL_IPERF: tuple[str, str] | None = ("bbr", "cubic")
-PARALLEL_IPERF = ("cubic", "cubic")
-# PARALLEL_IPERF = None
-# downstream receiver will need to run iperf3 on port 5201, 5202
+IPERF_DURATION = 300  # seconds/experiment (5 minutes)
 
 COOLDOWN = 15  # seconds between experiments (drain queues)
 TC_POLL_INTERVAL = 1  # seconds between tc -s snapshots
@@ -62,8 +55,17 @@ BPFTRACE_SCRIPT_REMOTE = "/tmp/bbr.bt"  # deployed to sender before batch
 # == Helpers ===================================================================
 
 
-def tag(rtt_ms, bw_mbit, buf_bytes, loss_pct, cc):
-    return f"rtt{rtt_ms}_bw{bw_mbit}_loss{loss_pct}_buf{buf_bytes}_{cc}"
+def kernel_cc(cc: str) -> str:
+    "kernel-side it's just bbr"
+    if cc in ("bbrv2", "bbrv3"):
+        return "bbr"
+    return cc
+
+
+def tag(rtt_ms, bw_mbit, buf_bdp_ratio, loss_pct, cc_a, cc_b):
+    buf_label = f"{buf_bdp_ratio:g}bdp"
+    cc_label = f"{cc_a}vs{cc_b}" if cc_b else cc_a
+    return f"rtt{rtt_ms}_bw{bw_mbit}_loss{loss_pct}_buf{buf_label}_{cc_label}"
 
 
 def _ssh_base():
@@ -161,13 +163,22 @@ def tc_poll_loop(out_path: Path, stop_event: threading.Event):
 def run_experiment(params: dict, out_dir: Path, dry_run: bool):
     rtt = params["rtt_ms"]
     bw = params["bw_mbit"]
-    buf = params["buf_bytes"]
+    buf_ratio = params["buf_bdp_ratio"]
     loss = params["loss_pct"]
-    cc = params["cc"]
+    cc_a = params["cc_a"]
+    cc_b = params["cc_b"]
+
+    # BDP in bytes = (bw_mbit * 1e6 / 8) * (rtt_ms / 1000)
+    bdp_bytes = (bw * 1_000_000 / 8) * (rtt / 1000)
+    buf = int(buf_ratio * bdp_bytes)
 
     print(f"\n{'='*60}")
-    print(f"  {tag(rtt_ms=rtt,bw_mbit=bw,buf_bytes=buf,loss_pct=loss,cc=cc)}")
-    print(f"  RTT={rtt}ms  BW={bw}Mbps  buf={buf}B  loss={loss}%  cc={cc}")
+    print(
+        f"  {tag(rtt_ms=rtt,bw_mbit=bw,buf_bdp_ratio=buf_ratio,loss_pct=loss,cc_a=cc_a,cc_b=cc_b)}"
+    )
+    print(
+        f"  RTT={rtt}ms  BW={bw}Mbps  buf={buf_ratio:g}xBDP={buf}B  loss={loss}%  cc={cc_a}{'vs'+cc_b if cc_b else ''}"
+    )
     print(f"{'='*60}")
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -176,10 +187,11 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
     meta = {
         "rtt_ms": rtt,
         "bw_mbit": bw,
+        "buf_bdp_ratio": buf_ratio,
         "buf_bytes": buf,
         "loss_pct": loss,
-        "cc": cc,
-        "parallel_iperf": list(PARALLEL_IPERF) if PARALLEL_IPERF else None,
+        "cc_a": cc_a,
+        "cc_b": cc_b if cc_b else None,
         "iperf_duration": IPERF_DURATION,
         "start_utc": datetime.now(timezone.utc).isoformat(),
         "sender": SENDER_HOST,
@@ -195,7 +207,7 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
         print("  [dry-run] skipping execution")
         return
 
-    # == 1. apply shaping locally ===============================================
+    # == 1. apply shape.sh locally ===============================================
     print("  [1/4] Applying tc shaping...")
     r = subprocess.run(
         ["bash", SHAPE_SCRIPT, str(rtt), str(bw), str(loss), str(buf)],
@@ -227,15 +239,16 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
 
     # == 4. run iperf3 client on sender -> receiver ============================
     # iperf3 server runs on receiver (172.16.2.2) from one-time setup; no ssh needed
-    if PARALLEL_IPERF:
-        cc_a, cc_b = PARALLEL_IPERF
+    if cc_b:
         print(
             f"  [4/4] Running two iperf3 streams for {IPERF_DURATION}s "
             f"(A={cc_a} port 5201, B={cc_b} port 5202)..."
         )
-        proc_a = ssh_bg(f"iperf3 -c 172.16.2.2 -C {cc_a} -t {IPERF_DURATION} -J")
+        proc_a = ssh_bg(
+            f"iperf3 -c 172.16.2.2 -C {kernel_cc(cc_a)} -t {IPERF_DURATION} -J"
+        )
         proc_b = ssh_bg(
-            f"iperf3 -c 172.16.2.2 -C {cc_b} -t {IPERF_DURATION} -J -p 5202"
+            f"iperf3 -c 172.16.2.2 -C {kernel_cc(cc_b)} -t {IPERF_DURATION} -J -p 5202"
         )
         stdout_a, stderr_a = proc_a.communicate(timeout=IPERF_DURATION + 30)
         stdout_b, stderr_b = proc_b.communicate(timeout=IPERF_DURATION + 30)
@@ -254,9 +267,9 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
         (out_dir / "iperf_sender_a.json").write_text(stdout_a)
         (out_dir / "iperf_sender_b.json").write_text(stdout_b)
     else:
-        print(f"  [4/4] Running iperf3 for {IPERF_DURATION}s (cc={cc})...")
+        print(f"  [4/4] Running iperf3 for {IPERF_DURATION}s (cc={cc_a})...")
         r = ssh(
-            f"iperf3 -c 172.16.2.2 -C {cc} -t {IPERF_DURATION} -J",
+            f"iperf3 -c 172.16.2.2 -C {kernel_cc(cc_a)} -t {IPERF_DURATION} -J",
             timeout=IPERF_DURATION + 30,
         )
         if r.returncode != 0:
@@ -283,9 +296,6 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
     (out_dir / "metadata.json").write_text(json.dumps(meta, indent=2))
 
     print(f"  Done. -> {out_dir}")
-
-
-# == Main ======================================================================
 
 
 def main():
@@ -326,9 +336,10 @@ def main():
         params = {
             "rtt_ms": int(row["rtt_ms"]),
             "bw_mbit": int(row["bw_mbit"]),
-            "buf_bytes": int(row["buf_bytes"]),
+            "buf_bdp_ratio": float(row["buf_bdp_ratio"]),
             "loss_pct": int(row["loss_pct"]),
-            "cc": row["cc"],
+            "cc_a": row["cc_a"],
+            "cc_b": row["cc_b"],
         }
         t = tag(**params)
         out_dir = results / t
