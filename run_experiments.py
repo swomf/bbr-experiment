@@ -4,7 +4,7 @@ orchestrate bbr/cubic experiments from the middlebox
 
 for each experiment we collect:
   - iperf3 JSON (sender)
-  - bpftrace BBR internals (sender, background)
+  - ss -tni poll: BBR internals incl. inflight_lo/hi, phase, bw_hi/lo (sender, background)
   - tc queue depth + drop counts polled every 1s (middlebox, background)
   - metadata JSON
 
@@ -49,11 +49,8 @@ IPERF_DURATION = 300  # seconds/experiment (5 minutes)
 COOLDOWN = 15  # seconds between experiments (drain queues)
 TC_POLL_INTERVAL = 1  # seconds between tc -s snapshots
 
-BPFTRACE_SCRIPT_LOCAL = Path(__file__).parent / "probes" / "bbr.bt"
-BPFTRACE_SCRIPT_REMOTE = "/tmp/bbr.bt"  # deployed to sender before batch
-
 SS_POLL_REMOTE = "/tmp/ss_poll.log"
-SS_POLL_INTERVAL = 0.2  # seconds between ss -tni snapshots
+SS_POLL_INTERVAL = 0.2  # seconds between ss -tni snapshots (5 Hz)
 
 # == Helpers ===================================================================
 
@@ -94,31 +91,6 @@ def local_bg(cmd: list) -> subprocess.Popen:
     return subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
-
-
-def deploy_bpftrace_script():
-    """scp probes/bbr.bt to sender before the batch starts."""
-    print(
-        f"Deploying bpftrace script to {SENDER_USER}@{SENDER_HOST}:{BPFTRACE_SCRIPT_REMOTE} ..."
-    )
-    r = subprocess.run(
-        [
-            "sshpass",
-            "-p",
-            SSH_PASS,
-            "scp",
-            "-o",
-            "StrictHostKeyChecking=no",
-            str(BPFTRACE_SCRIPT_LOCAL),
-            f"{SENDER_USER}@{SENDER_HOST}:{BPFTRACE_SCRIPT_REMOTE}",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if r.returncode != 0:
-        sys.exit(f"ERROR: failed to scp bbr.bt to sender:\n{r.stderr}")
-    print("  deployed.")
 
 
 # == tc polling ================================================================
@@ -210,8 +182,8 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
         print("  [dry-run] skipping execution")
         return
 
-    # == 1. apply shape.sh locally ===============================================
-    print("  [1/4] Applying tc shaping...")
+    # == 1. apply shape.sh locally =============================================
+    print("  [1/3] Applying tc shaping...")
     r = subprocess.run(
         ["bash", SHAPE_SCRIPT, str(rtt), str(bw), str(loss), str(buf)],
         capture_output=True,
@@ -222,17 +194,8 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
         return
     (out_dir / "shape_output.txt").write_text(r.stdout)
 
-    # == 2. start bpftrace on sender ===========================================
-    print("  [2/4] Starting bpftrace and ss poll on sender...")
-    # Write output to a local file on the sender - avoids piping large logs over
-    # SSH during the experiment (especially at high bandwidth).
-    bpf_proc = ssh_bg(
-        f"echo {SSH_PASS} | sudo -S bpftrace {BPFTRACE_SCRIPT_REMOTE} > /tmp/bpftrace_out.log 2>&1"
-    )
-    time.sleep(1)  # let bpftrace attach
-
-    # Poll ss -tni on the sender to capture BBR-specific fields
-    # (inflight_hi, inflight_lo, bw_hi, bw_lo, pacing_gain, cwnd_gain, etc.)
+    # == 2. start ss poll and tc poll ==========================================
+    print("  [2/3] Starting ss poll and tc poll...")
     ss_proc = ssh_bg(
         f"while true; do"
         f' echo "=== $(date +%s) ===";'
@@ -241,8 +204,6 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
         f" done > {SS_POLL_REMOTE} 2>&1"
     )
 
-    # == 3. start tc poll locally ==============================================
-    print("  [3/4] Starting tc poll...")
     tc_stop = threading.Event()
     tc_thread = threading.Thread(
         target=tc_poll_loop,
@@ -251,11 +212,11 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
     )
     tc_thread.start()
 
-    # == 4. run iperf3 client on sender -> receiver ============================
+    # == 3. run iperf3 client on sender -> receiver ============================
     # iperf3 server runs on receiver (172.16.2.2) from one-time setup; no ssh needed
     if cc_b:
         print(
-            f"  [4/4] Running two iperf3 streams for {IPERF_DURATION}s "
+            f"  [3/3] Running two iperf3 streams for {IPERF_DURATION}s "
             f"(A={cc_a} port 5201, B={cc_b} port 5202)..."
         )
         proc_a = ssh_bg(
@@ -281,7 +242,7 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
         (out_dir / "iperf_sender_a.json").write_text(stdout_a)
         (out_dir / "iperf_sender_b.json").write_text(stdout_b)
     else:
-        print(f"  [4/4] Running iperf3 for {IPERF_DURATION}s (cc={cc_a})...")
+        print(f"  [3/3] Running iperf3 for {IPERF_DURATION}s (cc={cc_a})...")
         r = ssh(
             f"iperf3 -c 172.16.2.2 -C {kernel_cc(cc_a)} -t {IPERF_DURATION} -J",
             timeout=IPERF_DURATION + 30,
@@ -293,17 +254,8 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
         (out_dir / "iperf_sender.json").write_text(r.stdout)
 
     # == Stop tc poll ==========================================================
-
     tc_stop.set()
     tc_thread.join(timeout=5)
-
-    # == Stop bpftrace and collect =============================================
-    # SIGINT to the local SSH process causes the remote session to close,
-    # which sends SIGHUP to bpftrace - it prints the END block and flushes.
-    bpf_proc.send_signal(signal.SIGINT)
-    bpf_proc.wait(timeout=15)  # wait for bpftrace to flush and SSH to close
-    r_bpf = ssh("cat /tmp/bpftrace_out.log", timeout=120)
-    (out_dir / "bpftrace.log").write_text(r_bpf.stdout)
 
     # == Stop ss poll and collect ==============================================
     ss_proc.send_signal(signal.SIGINT)
@@ -346,9 +298,6 @@ def main():
     total = len(experiments)
     print(f"Loaded {total} experiments from {args.experiments}")
     print(f"Estimated runtime: {total * (IPERF_DURATION + COOLDOWN) / 60:.1f} minutes")
-
-    if not args.dry_run:
-        deploy_bpftrace_script()
 
     start_wall = time.time()
 
