@@ -52,6 +52,9 @@ TC_POLL_INTERVAL = 1  # seconds between tc -s snapshots
 BPFTRACE_SCRIPT_LOCAL = Path(__file__).parent / "probes" / "bbr.bt"
 BPFTRACE_SCRIPT_REMOTE = "/tmp/bbr.bt"  # deployed to sender before batch
 
+SS_POLL_REMOTE = "/tmp/ss_poll.log"
+SS_POLL_INTERVAL = 0.2  # seconds between ss -tni snapshots
+
 # == Helpers ===================================================================
 
 
@@ -220,12 +223,23 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
     (out_dir / "shape_output.txt").write_text(r.stdout)
 
     # == 2. start bpftrace on sender ===========================================
-    print("  [2/4] Starting bpftrace on sender...")
-    # Write output to a local file on the sender — avoids piping large logs over
+    print("  [2/4] Starting bpftrace and ss poll on sender...")
+    # Write output to a local file on the sender - avoids piping large logs over
     # SSH during the experiment (especially at high bandwidth).
-    # (expects 'sudo setcap cap_bpf,cap_perfmon+eip /usr/bin/bpftrace' on sender)
-    bpf_proc = ssh_bg(f"bpftrace {BPFTRACE_SCRIPT_REMOTE} > /tmp/bpftrace_out.log 2>&1")
+    bpf_proc = ssh_bg(
+        f"echo {SSH_PASS} | sudo -S bpftrace {BPFTRACE_SCRIPT_REMOTE} > /tmp/bpftrace_out.log 2>&1"
+    )
     time.sleep(1)  # let bpftrace attach
+
+    # Poll ss -tni on the sender to capture BBR-specific fields
+    # (inflight_hi, inflight_lo, bw_hi, bw_lo, pacing_gain, cwnd_gain, etc.)
+    ss_proc = ssh_bg(
+        f"while true; do"
+        f' echo "=== $(date +%s) ===";'
+        f" ss -tni dst 172.16.2.2;"
+        f" sleep {SS_POLL_INTERVAL};"
+        f" done > {SS_POLL_REMOTE} 2>&1"
+    )
 
     # == 3. start tc poll locally ==============================================
     print("  [3/4] Starting tc poll...")
@@ -285,11 +299,17 @@ def run_experiment(params: dict, out_dir: Path, dry_run: bool):
 
     # == Stop bpftrace and collect =============================================
     # SIGINT to the local SSH process causes the remote session to close,
-    # which sends SIGHUP to bpftrace — it prints the END block and flushes.
+    # which sends SIGHUP to bpftrace - it prints the END block and flushes.
     bpf_proc.send_signal(signal.SIGINT)
     bpf_proc.wait(timeout=15)  # wait for bpftrace to flush and SSH to close
     r_bpf = ssh("cat /tmp/bpftrace_out.log", timeout=120)
     (out_dir / "bpftrace.log").write_text(r_bpf.stdout)
+
+    # == Stop ss poll and collect ==============================================
+    ss_proc.send_signal(signal.SIGINT)
+    ss_proc.wait(timeout=10)
+    r_ss = ssh(f"cat {SS_POLL_REMOTE}", timeout=60)
+    (out_dir / "ss_poll.log").write_text(r_ss.stdout)
 
     # == Finalize metadata =====================================================
     meta["end_utc"] = datetime.now(timezone.utc).isoformat()
