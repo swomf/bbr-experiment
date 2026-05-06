@@ -1,0 +1,28 @@
+diff --git a/net/ipv4/tcp_bbr.c b/net/ipv4/tcp_bbr.c
+index e09389c378cc..cc64bb773e70 100644
+--- a/net/ipv4/tcp_bbr.c
++++ b/net/ipv4/tcp_bbr.c
+@@ -224,7 +224,7 @@ static const int bbr_cwnd_gain  = BBR_UNIT * 2;
+ /* The pacing_gain values for the PROBE_BW gain cycle, to discover/share bw: */
+ static const int bbr_pacing_gain[] = {
+ 	BBR_UNIT * 5 / 4,	/* UP: probe for more available bw */
+-	BBR_UNIT * 91 / 100,	/* DOWN: drain queue and/or yield bw */
++	BBR_UNIT * 3 / 4,	/* DOWN: drain queue and/or yield bw */
+ 	BBR_UNIT,		/* CRUISE: try to use pipe w/ some headroom */
+ 	BBR_UNIT,		/* REFILL: refill pipe to estimated 100% */
+ };
+@@ -956,10 +956,10 @@ static void bbr_update_gains(struct sock *sk)
+ 	case BBR_PROBE_BW:
+ 		bbr->pacing_gain = bbr_pacing_gain[bbr->cycle_idx];
+ 		bbr->cwnd_gain	 = bbr_param(sk, cwnd_gain);
+-		if (bbr_param(sk, bw_probe_cwnd_gain) &&
+-		    bbr->cycle_idx == BBR_BW_PROBE_UP)
+-			bbr->cwnd_gain +=
+-				BBR_UNIT * bbr_param(sk, bw_probe_cwnd_gain) / 4;
++		// if (bbr_param(sk, bw_probe_cwnd_gain) &&
++		//     bbr->cycle_idx == BBR_BW_PROBE_UP)
++		// 	bbr->cwnd_gain +=
++		// 		BBR_UNIT * bbr_param(sk, bw_probe_cwnd_gain) / 4;
+ 		break;
+ 	case BBR_PROBE_RTT:
+ 		bbr->pacing_gain = BBR_UNIT;
