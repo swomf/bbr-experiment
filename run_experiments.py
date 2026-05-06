@@ -56,8 +56,10 @@ SS_POLL_INTERVAL = 0.2  # seconds between ss -tni snapshots (5 Hz)
 
 
 def kernel_cc(cc: str) -> str:
-    "kernel-side it's just bbr"
-    if cc in ("bbrv2", "bbrv3"):
+    # important
+    if cc == "bbrv2":
+        return "bbr2"
+    if cc == "bbrv3":
         return "bbr"
     return cc
 
