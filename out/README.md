@@ -19,7 +19,7 @@ Top-level data dirs are of the form
 {experimentnumber}-{matrixsize}-{algo(s)}
 ```
 
-The `03/` experiments vary the Cartesian product:
+For the GitHub tag experiment-04, the following Cartesian product is varied.
 
 ```python
 RTT_MS = [10, 50, 100]
@@ -35,6 +35,8 @@ COMPARISONS = [
     ("cubic", "bbrv3"),
 ]
 ```
+
+Download the data from the releases page.
 
 ## older experimental design
 
@@ -56,10 +58,29 @@ BUF_BYTES = [6250000 // 10, 6250000, 6250000 * 10]
 LOSS_PCT = [0, 1, 2]
 ```
 
-Within each experiment set dir, data dirs are of the form:
+Within the `01/` and `02/` set dirs, data dirs are of the form:
 
 ```
 rtt{ms}_bw{Mbps}_loss{percentage}_buf{bytes}_bbr
 ```
 
-(bbr is included in the dir title but isn't relevant -- this is for backwards compatibility, just ignore it)
+(bbr is included in the dir title but isn't relevant for 01, 02)
+
+The `03/` experiments vary the Cartesian product:
+
+```python
+RTT_MS = [10, 50, 100]
+BW_MBIT = [100]
+BUF_BDP_RATIOS = [0.1, 1.0, 10.0]
+LOSS_PCT = [0, 2]
+COMPARISONS = [
+    ("cubic", ""),
+    ("bbrv2", ""),  # ran on bbrv2 kernel
+    ("bbrv3", ""),
+    ("cubic", "cubic"),
+    ("cubic", "bbrv2"),  # ran on bbrv2 kernel
+    ("cubic", "bbrv3"),
+]
+```
+
+
