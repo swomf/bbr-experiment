@@ -11,11 +11,11 @@ LOSS_PCT = [0, 2]
 # (cc_a, cc_b): cc_b="" means single-stream; cubic is always listed first in pairs
 COMPARISONS = [
     # ("cubic", ""),
-    ("bbrv2", ""),  # run afterwards
-    # ("bbrv3", ""),
+    # ("bbrv2", ""),  # run afterwards
+    ("bbrv3", ""),
     # ("cubic", "cubic"),
-    ("cubic", "bbrv2"),  # run afterwards
-    # ("cubic", "bbrv3"),
+    # ("cubic", "bbrv2"),  # run afterwards
+    ("cubic", "bbrv3"),
 ]
 # NOTE: bbrv2, bbrv3 are replaced with just "bbr" when the actual iperf call is used
 
