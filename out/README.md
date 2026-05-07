@@ -38,6 +38,24 @@ COMPARISONS = [
 
 Download the data from the releases page.
 
+For the GitHub tag experiment-05, the following Cartesian product is varied.
+Note that `v3_probe.patch` and `v3_startup.patch` were used
+in the BBRv3 kernel, patching `net/ipv4/tcp_bbr.ko`.
+
+```python
+RTT_MS = [10, 50, 100]
+BW_MBIT = [100]
+BUF_BDP_RATIOS = [0.1, 1.0, 10.0]
+LOSS_PCT = [0, 2]
+# (cc_a, cc_b): cc_b="" means single-stream; cubic is always listed first in pairs
+COMPARISONS = [
+    ("bbrv3", ""),
+    ("cubic", "bbrv3"),
+]
+```
+
+Download the data from the releases page.
+
 ## older experimental design
 
 The `01/` experiments vary the Cartesian product:
