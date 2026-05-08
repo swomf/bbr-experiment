@@ -19,11 +19,11 @@ Top-level data dirs are of the form
 {experimentnumber}-{matrixsize}-{algo(s)}
 ```
 
-For the GitHub tag experiment-04, the following Cartesian product is varied.
+For the GitHub tag experiment-06, the following Cartesian product is varied.
 
 ```python
 RTT_MS = [10, 50, 100]
-BW_MBIT = [100]
+BW_MBIT = [100, 500]
 BUF_BDP_RATIOS = [0.1, 1.0, 10.0]
 LOSS_PCT = [0, 2]
 COMPARISONS = [
